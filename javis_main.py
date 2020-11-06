@@ -5,19 +5,45 @@ import time
 import os
 from gtts import gTTS
 import webbrowser
-from datetime import datetime
 import sys
 import constant
 from youtube_search import YoutubeSearch
 import pafy
 import vlc
+import webbrowser
+import datetime
+from time import ctime
+import requests
+import base64
 
+# def speak(audioString):
+#     print(audioString)
+#     tts = gTTS(text=audioString, lang='en')
+#     tts.save("audio.mp3")
+#     os.system("mpg321 audio.mp3")
 
-def speak(audioString):
-    print(audioString)
-    tts = gTTS(text=audioString, lang='vi')
-    tts.save("audio.mp3")
-    os.system("mpg321 audio.mp3")
+def speak(text):
+    API_KEY = 'AIzaSyAN8LcZhriwuNa94u4L4ZE4NJbVglUm5uM'
+    API_URL = f'https://texttospeech.googleapis.com/v1/text:synthesize?key={API_KEY}'
+    data = {
+        "input": {
+            "text": text
+        },
+        "audioConfig": {
+            "audioEncoding": "MP3"
+        },
+        "voice": {
+            # "languageCode": "en-US"
+            "languageCode": "en-US"
+        }
+    }
+
+    res = requests.post(API_URL, json=data)
+    audio_b64 = res.json()['audioContent']
+    audio_byte = base64.b64decode(audio_b64)
+    with open("audio.mp3", mode='wb') as f:
+        f.write(audio_byte)
+        os.system("mpg321 audio.mp3")
 
 
 def record_audio():
@@ -33,7 +59,7 @@ def record_audio():
     try:
         # Uses the default API key
         # To use another API key: `r.recognize_google(audio, key="GOOGLE_SPEECH_RECOGNITION_API_KEY")`
-        data = r.recognize_google(audio, language='vi')
+        data = r.recognize_google(audio, language='en-in')
         data.lower()
         print("You said: " + data)
     except sr.UnknownValueError:
@@ -47,69 +73,61 @@ def record_audio():
 def jarvis(data):
 
     if constant.MUSIC in data:
-        search_youtube()
+        play_favorite_music()
 
+    if constant.WORkPLACE in data:
+        check_workplace()
     if constant.TIME in data:
-        voice = get_time()
-        speak(voice)
-
-    if constant.LOCATION in data:
-        remove_text_index = data.find('ở đâu')
-        location = data[0:remove_text_index]
-        speak(f"Đang tìm kiếm địa điểm {location}")
-        search_map(location=location)
-
+        get_time()
+    if constant.WEATHER in data:
+        get_weather()
+    if constant.THANKS in data:
+        only_jarvis_reply()
+    if constant.TIRED in data:
+        jarvis_system()
     if constant.CLOSE in data:
         close()
 
 
 # get current time
 def get_time():
-    now = datetime.now()
+    now = datetime.datetime.now()
     hour = now.time().hour
     minute = now.time().minute
-    answer = f"Bây giờ là {hour} giờ {minute} phút"
-    return answer
-
-
-# search location
-def search_map(location: str):
-    webbrowser.open(f"https://www.google.com/maps/place/{location}?hl=vi-VN")
-
-
-def search_youtube():
-    speak("Bạn muốn nghe bài hát nào")
-    search_text = record_audio()
-    time.sleep(2)
-    if search_text:
-        speak(f"Có phải bạn muốn tìm bài hát {search_text}")
-        answer = record_audio()
-        if constant.TRUE in answer:
-            print(search_text)
-            result = YoutubeSearch(search_text, max_results=10).to_dict()
-            if len(result) == 0:
-                speak("Không có kết quả tìm kiếm nào cho bài hát bạn đưa ra")
-            else:
-                speak("Tiến hành phát nhạc cho kết quả phù hợp nhất")
-                link = result[0]['link']
-                BASE_URL = "https://www.youtube.com"
-                url = f"{BASE_URL}{link}"
-                play = play_video(url)
-                play.play()
-                time.sleep(10)
-                action_when_play_video(play)
-
+    speak(ctime())
+    work_hour = 11 - hour
+    if work_hour > 0:
+        work_minutes = 30 + 60 - minute
+        if work_minutes < 60:
+            speak(f"You have {work_hour} hour and {work_minutes} minutes to go to work")
         else:
-            time.sleep(1)
-            search_youtube()
+            add_hour = int(work_minutes/60)
+            add_minutes = work_minutes - add_hour * 60
+            speak(f"You have {add_hour} hour and {add_minutes} minutes to go to work")
+    else:
+        speak("Sir, you are late for work")
+
+
+def get_weather():
+    BASE_URL = 'https://api.openweathermap.org/data/2.5/weather?'
+    CITY = "Ha Noi"
+    API_KEY = "c60040519c58a816da13786300c3511a"
+    URL = BASE_URL + "q=" + CITY + "&appid=" + API_KEY
+    res = requests.get(URL)
+    if res.status_code == 200:
+        data = res.json()
+        temp = data['main']['temp']
+        C_temp = temp - 273.15
+        speak(f"The weather outside is {C_temp} degrees Celsius")
 
 
 def close():
     sys.exit()
 
 
-def play_video(url: str):
+def play_video():
     # get best link to play with pafy
+    url = 'https://www.youtube.com/playlist?list=LL'
     video = pafy.new(url)
     best = video.getbest()
     play_url = best.url
@@ -120,24 +138,41 @@ def play_video(url: str):
     media = instance.media_new(play_url)
     media.get_mrl()
     player.set_media(media)
-    return player
+    player.play()
 
 
-def action_when_play_video(play):
-    command = record_audio()
-    if constant.PAUSE in command:
-        play.pause()
-        action_when_play_video(play)
-    elif constant.RESUME in command:
-        play.pause()
-        action_when_play_video(play)
-    elif constant.STOP in command:
-        play.stop()
+def play_favorite_music():
+    speak("Would you like this?")
+    url = 'https://www.youtube.com/watch?v=eKP1Agud-GQ&list=PL4kx4v8kuHgcLNRA6lGsvuzPT5_ZqDXm0'
+    webbrowser.open(url)
 
 
-# initialization
-time.sleep(2)
-speak("Xin chào Đức Anh, tôi có thể giúp gì cho ngài")
-while 1:
-    data = record_audio()
-    jarvis(data)
+def check_workplace():
+    speak("Opening workplace")
+    url = 'https://ecomedic.workplace.com/chat/'
+    webbrowser.open(url)
+
+
+def greeting():
+    time.sleep(2)
+    speak("Good morning sir, it's time to wake up")
+
+
+def only_jarvis_reply():
+    speak("No problem, sir")
+
+
+def jarvis_system():
+    speak("I know, sir")
+    speak("You let the system up and running for the whole night")
+
+
+def main():
+    greeting()
+    while 1:
+        data = record_audio()
+        jarvis(data)
+
+
+if __name__ == '__main__':
+    main()
